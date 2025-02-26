@@ -24,7 +24,7 @@
 
 #define _XOPEN_SOURCE
 #define PORTA 8080
-#define TAMANHO_MENSAGEM 1024
+#define TAMANHO_MENSAGEM 2048
 // Códigos de erro HTTP
 #define HTTP_NOT_FOUND 404
 #define HTTP_FORBIDDEN 403
@@ -62,6 +62,7 @@ struct noValor* inicioValor = NULL; //marca o inicio da lista
 struct noValor* fimValor = NULL;    //marca o fim dessa lista
 
 extern char* host;
+extern char* post_param;
 char saida[4096] = {0};
 int contador = 0;
 
@@ -201,7 +202,7 @@ char* get_file_extension(const char* path) {
 char* get_tipo(char *ext){
     char *tipo;
     if (strcmp(ext, "html") == 0){
-        tipo = "text/html";
+        tipo = "text/html; charset=ISO-8859-1";
     }else if (strcmp(ext, "pdf") == 0){
         tipo = "application/pdf";
     }else if (strcmp(ext, "gif") == 0){
@@ -211,7 +212,7 @@ char* get_tipo(char *ext){
     }else if (strcmp(ext, "jpg") == 0){
         tipo = "image/jpeg";
     }else if (strcmp(ext, "txt") == 0){
-        tipo = "text/plain";
+        tipo = "text/plain; charset=ISO-8859-1";
     }
     return tipo;
 }
@@ -271,7 +272,7 @@ int cabecalho(int resposta, char *msg, char *recurso, int tam, char *req, char* 
     struct stat statbuf;
     int registro = open(reg_file, O_WRONLY | O_APPEND | O_CREAT, 0644);
     if (registro < 0) {
-            perror("Erro ao abrir o arquivo\n");
+            perror("Erro ao abrir o arquivo cabecalho\n");
             return -1;
     }
     // printf("antes da data\n");
@@ -339,7 +340,7 @@ int acessar_recurso(char *req, char *caminho_completo, char* reg_file, int novo_
     int tam;
     int respN;
     // printf("começo do acessar recurso\n"); //debug
-    printf("%s\n", caminho_completo); //debug
+    // printf("%s\n", caminho_completo); //debug
     // printf("Caminho completo: %s\n", caminho_completo);  // Depuração
 
     // (b) Verificar se o recurso é um arquivo ou diretório
@@ -353,9 +354,7 @@ int acessar_recurso(char *req, char *caminho_completo, char* reg_file, int novo_
             cabecalho(HTTP_FORBIDDEN, "PATH FORBIDDEN",  caminho_completo, 0, req, reg_file);
             write(novo_soquete, saida, strlen(saida));
             return HTTP_FORBIDDEN;  // caminho sem permissão de leitura
-        } else if ((statbuf.st_mode & S_IRUSR)){
-            printf("debuf\n");
-        }
+        } 
         else {
             perror("Erro ao acessar o recurso com stat aqui");
             return -1;
@@ -375,7 +374,7 @@ int acessar_recurso(char *req, char *caminho_completo, char* reg_file, int novo_
         // printf("Recurso é um arquivo\n");  // Depuração
         int fd = open(caminho_completo, O_RDONLY);
         if (fd < 0) {
-            perror("Erro ao abrir o arquivo");
+            perror("Erro ao abrir o arquivo de vdd");
             return -1;
         }
         tam = statbuf.st_size;
@@ -430,7 +429,7 @@ int acessar_recurso(char *req, char *caminho_completo, char* reg_file, int novo_
                     // printf("Arquivo encontrado com permissão de leitura: %s\n", caminho_arquivo);  // Depuração
                     int fd = open(caminho_arquivo, O_RDONLY);
                     if (fd < 0) {
-                        perror("Erro ao abrir o arquivo");
+                        perror("Erro ao abrir o arquivo padrão");
                         return -1;
                     }
                     tam = statbuf.st_size;
@@ -453,7 +452,7 @@ int acessar_recurso(char *req, char *caminho_completo, char* reg_file, int novo_
                             bytes_lidos = read(fd, buffer, sizeof(buffer));
                             buffer[bytes_lidos] = '\0';
                             buffer[bytes_lidos+1] = '\0';
-                            printf("%zd\n", bytes_lidos);
+                            // printf("%zd\n", bytes_lidos);
                             strcat(saida, buffer);
                             write(novo_soquete, saida, strlen(saida));
                         }
@@ -487,13 +486,37 @@ void registro_requisicao(char* req_file){
         perror("Erro ao abrir o arquivo aqui REG\n");
         return ;
     }
-    write(registro, "\n", 1);
-    write(registro, request->metodo, strlen(request->metodo));
-    write(registro, " ", 1);
-    write(registro, request->caminho, strlen(request->caminho));
-    write(registro, " ", 1);
-    write(registro, request->protocolo, strlen(request->protocolo));
-    write(registro, "\n", 1);
+    char saida_registro[TAMANHO_MENSAGEM];
+    char campo[256];
+    if (inicioCampo != NULL){
+        struct noCampo* ini_lista_campo = inicioCampo;
+        struct noCampo* atualCampo = inicioCampo;
+        struct noValor* atualValor = atualCampo->listaValor;
+        snprintf(saida_registro, strlen(request->metodo)+strlen(request->caminho)+strlen(request->protocolo)+3, "%s %s %s\n", request->metodo, request->caminho, request->protocolo);
+        snprintf(campo, strlen(host)+1, "%s\n", host);
+        strcat(saida_registro, campo);
+        while (atualCampo != NULL) {
+            snprintf(campo, strlen(atualCampo->nomeCampo)+1, "%s:", atualCampo->nomeCampo);
+            strcat(saida_registro, campo);
+            atualValor = atualCampo->listaValor;
+            snprintf(campo, strlen(atualValor->nomeValor), "%s", atualValor->nomeValor);
+            strcat(saida_registro, campo);
+            atualValor = atualValor->proxValor;
+            while (atualValor != NULL) {
+                snprintf(campo, strlen(atualValor->nomeValor)+1, ",%s", atualValor->nomeValor);
+                strcat(saida_registro, campo);
+                atualValor = atualValor->proxValor;
+            }
+            strcat(saida_registro, "\n");
+            atualCampo = atualCampo->proxCampo;
+        }
+        strcat(saida_registro, "\n");
+    }
+    if (strcmp(request->metodo, "POST")==0){
+        snprintf(campo, strlen(post_param)+2, "%s\n\n", post_param);
+        strcat(saida_registro, campo);
+    }
+    write(registro, saida_registro, strlen(saida_registro));
     close(registro);
 }
 
@@ -554,14 +577,14 @@ char *verificar_ultimo_htaccess(const char *caminho) {
         strncpy(ultimo_htaccess, htaccess_path, sizeof(ultimo_htaccess));
         ultimo_htaccess[sizeof(ultimo_htaccess) - 1] = '\0'; // Garante terminação
     }
-    printf("%s\n", ultimo_htaccess);
+    // printf("%s\n", ultimo_htaccess);
     // Retorna o último .htaccess encontrado ou NULL se nenhum foi encontrado
     return strlen(ultimo_htaccess) > 0 ? ultimo_htaccess : NULL;
 }
 
 int ta_dentro(const char *path) {
     //la ele
-    int count = 0;
+    int count = -1; //primeira iteracao vai verificar o proprio webspace e o count vai comecar de vdd
     char temp[256];
 
     strncpy(temp, path, sizeof(temp) - 1);
@@ -648,7 +671,7 @@ char* decode_base64(const char *input, size_t *output_length) {
 char* pegar_htpassword(const char *caminho) {
     FILE *arquivo = fopen(caminho, "r");
     if (!arquivo) {
-        perror("Erro ao abrir o arquivo");
+        perror("Erro ao abrir o arquivo de htpassword");
         return NULL;
     }
 
@@ -691,15 +714,15 @@ char* pegar_htpassword(const char *caminho) {
 }
 
 // Função para buscar a senha de um usuário em um arquivo
-char* obter_senha(const char *caminho_arquivo, const char *usuario) {
+int verifica_senha(const char *caminho_arquivo, const char *usuario, const char *senha) {
     FILE *arquivo = fopen(caminho_arquivo, "r");
     if (!arquivo) {
         perror("Erro ao abrir o arquivo de senha");
-        return NULL;
+        return -1;
     }
 
     char buffer[512];
-    char *senha = NULL;
+    int retorno = 0;
 
     // Lê o arquivo linha por linha
     while (fgets(buffer, sizeof(buffer), arquivo)) {
@@ -714,13 +737,25 @@ char* obter_senha(const char *caminho_arquivo, const char *usuario) {
         char *senha_atual = strtok(NULL, ":");
 
         // Verifica se o usuário corresponde
-        if (usuario_atual && senha_atual && strcmp(usuario_atual, usuario) == 0) {
-            // Aloca memória para a senha e copia o conteúdo
-            senha = malloc(strlen(senha_atual) + 1);
-            if (senha) {
-                strcpy(senha, senha_atual);
-            } else {
-                perror("Erro ao alocar memória");
+        if (strcmp(usuario_atual, usuario) == 0) {
+            char temp[512];
+            strcpy(temp, senha_atual);
+        
+            // printf("1: %s\n", usuario_atual);
+            char *tipo_sal = strtok(temp, "$");
+            char *sal_real = strtok(NULL, "$");
+            char *senha_cripto = strtok(NULL, "$");
+            char sal[512];
+            snprintf(sal, 512, "$%s$%s$",tipo_sal,sal_real);
+            // printf("2: %s\n", sal);
+            char* crypto = crypt(senha, sal);
+            // printf("3: %s\n", crypto);
+            // printf("4: %s\n", senha_atual);
+            //verifica se a senha bate
+            if (strcmp(crypto, senha_atual)==0){
+                retorno = 1;
+            }else{
+                retorno = 0;
             }
             break;
         }
@@ -729,7 +764,131 @@ char* obter_senha(const char *caminho_arquivo, const char *usuario) {
     fclose(arquivo);
 
     // Retorna a senha encontrada ou NULL se não encontrada
-    return senha;
+    return retorno;
+}
+
+int atualizar_senha(const char *arquivo_senhas, const char *usuario, const char *nova_senha) {
+    FILE *arquivo = fopen(arquivo_senhas, "r");
+    if (!arquivo) {
+        perror("Erro ao abrir o arquivo original");
+        return -1;
+    }
+
+    FILE *arquivo_temp = fopen("arquivo_temporario.txt", "w");
+    if (!arquivo_temp) {
+        perror("Erro ao criar arquivo temporário");
+        fclose(arquivo);
+        return -1;
+    }
+
+    char linha[512];
+    int usuario_encontrado = 0;
+
+    while (fgets(linha, sizeof(linha), arquivo)) {
+        char usuario_atual[512];
+        char senha_atual[512];
+
+        // Remove a quebra de linha, se existir
+        linha[strcspn(linha, "\n")] = 0;
+        // Divide a linha em "usuario" e "senha"
+        if (sscanf(linha, "%[^:]:%s", usuario_atual, senha_atual) == 2) {
+            if (strcmp(usuario_atual, usuario) == 0) {
+                // Substituir a senha
+                fprintf(arquivo_temp, "%s:%s\n", usuario_atual, nova_senha);
+                usuario_encontrado = 1;
+            } else {
+                fprintf(arquivo_temp, "%s:%s\n", usuario_atual, senha_atual);
+            }
+        } else {
+            // Escreve linhas mal formatadas sem alteração
+            fprintf(arquivo_temp, "%s\n", linha);
+        }
+    }
+
+    fclose(arquivo);
+    fclose(arquivo_temp);
+
+    // Substituir o arquivo original pelo arquivo temporário
+    if (rename("arquivo_temporario.txt", arquivo_senhas) != 0) {
+        perror("Erro ao substituir o arquivo original");
+        remove("arquivo_temporario.txt");
+        return -1;
+    }
+
+    return usuario_encontrado ? 0 : 1; // Retorna 0 se o usuário foi encontrado, 1 caso contrário
+}
+
+void lida_post(char* diretorio, char *caminho, char *registro, int novo_soquete){
+    char *htaccess = verificar_ultimo_htaccess(caminho);
+    // printf("htaccess lidos: %s\n", htaccess);
+    char *htpassword = pegar_htpassword(htaccess);
+    char deu_bom[124], senha_diferente[124], user_senha_errado[124];
+    snprintf(deu_bom, 124, "%s/deu_certo.html", diretorio);
+    snprintf(senha_diferente, 124, "%s/senha_diff.html", diretorio);    
+    snprintf(user_senha_errado, 124, "%s/user_senha_errado.html", diretorio);
+    //nomeusuario=teste&senhaAntiga=ljsjd&senhaNova1=ajbnm&senhaNova2=asdasd&confirmar=Enviar
+    // printf("param lidos: %s\n", post_param);
+    char temp[512];
+    char *pairs[5];
+    char *token;
+    char *key, *value;
+    char *user, *senha_antiga, *senhaNova1, *senhaNova2;
+    int i = 0;
+    strcpy(temp, post_param);
+    token = strtok(temp, "&");
+    while (token != NULL) {
+        pairs[i++] = token;
+        token = strtok(NULL, "&");
+    }
+    for (int j = 0; j < i; j++) {
+        key = strtok(pairs[j], "=");  // Separar chave
+        value = strtok(NULL, "=");   // Obter valor
+
+        if (key && value) {
+            // printf("Chave: %s, Valor: %s\n", key, value);
+            // Aqui você pode armazenar os valores em variáveis apropriadas
+            if (strcmp(key, "nomeusuario") == 0) {
+                 user = malloc(strlen(value));
+                strcpy(user, value);
+            } else if (strcmp(key, "senhaAntiga") == 0) {
+                senha_antiga = malloc(strlen(value));
+                strcpy(senha_antiga, value);
+            }else if (strcmp(key, "senhaNova1") == 0) {
+                senhaNova1 = malloc(strlen(value));
+                strcpy(senhaNova1, value);
+            }else if (strcmp(key, "senhaNova2") == 0) {
+                senhaNova2 = malloc(strlen(value));
+                strcpy(senhaNova2, value);
+            }
+        }
+    }
+    if (strcmp(senhaNova1, senhaNova2) != 0){
+        //senha1 e senha2 são diferentes vai retornar o html: senha_diff.html
+        acessar_recurso("GET",senha_diferente,registro,novo_soquete);
+    }else{
+        int valido = verifica_senha(htpassword, user, senha_antiga);
+        if (valido == 0){
+            acessar_recurso("GET",user_senha_errado,registro,novo_soquete);
+        }else{
+            char sal[13]={0};
+            char hex_sal[9]={0}; 
+            unsigned int numeroAleatorio = rand();
+            for (int i = 7; i >= 0; i--) {
+                hex_sal[i] = "0123456789ABCDEF"[numeroAleatorio % 16];
+                numeroAleatorio /= 16;
+            }
+            hex_sal[8] = '\0'; // Terminador nulo
+            snprintf(sal, 13, "$5$%s$", hex_sal);
+            // printf("%s\n", sal);
+            char *nova_senha = crypt(senhaNova1, sal);
+            // printf("%s\n", nova_senha);
+            if (atualizar_senha(htpassword, user, nova_senha) == 0){
+                acessar_recurso("GET",deu_bom,registro,novo_soquete);
+            }
+            
+        }
+    }
+
 }
 
 //função passada para a threads 
@@ -813,6 +972,9 @@ void *lida_requisicao(void *args){
                 }
                 printf("\n");
             }
+            if (strcmp(request->metodo, "POST")==0){
+                printf("%s\n\n", post_param);
+            }
             
             snprintf(caminho_completo, sizeof(caminho_completo), "%s%s", caminho, request->caminho);
             char *htaccess = NULL;
@@ -839,29 +1001,14 @@ void *lida_requisicao(void *args){
                     char *user = strtok(user_senha_decoded, ":");
                     char *senha = strtok(NULL,":");
                     char *htpassword = pegar_htpassword(htaccess);
-                    char *senha_guardada = obter_senha(htpassword, user);
-                    if (senha_guardada == NULL){
-                        liberado = 0;
-                    }else{
-                        char temp[512];
-                        strcpy(temp, senha_guardada);
-                    
-                        printf("1: %s\n", user);
-                        char *tipo_sal = strtok(temp, "$");
-                        char *sal_real = strtok(NULL, "$");
-                        char *senha_cripto = strtok(NULL, "$");
-                        char sal[512];
-                        snprintf(sal, 512, "$%s$%s$",tipo_sal,sal_real);
-                        printf("2: %s\n", sal);
-                        char* crypto = crypt(senha, sal);
-                        printf("3: %s\n", crypto);
-                        printf("4: %s\n", senha_guardada);
-                        
-                        if (strcmp(crypto, senha_guardada)==0){
-                            liberado = 1;
-                        }else{
-                            liberado = 0;
-                        }
+                    liberado = verifica_senha(htpassword, user, senha);
+                    if (liberado == -1){
+                        printf("deu ruim no htpassword!");
+                        limpa_lista(inicioCampo);
+                        close(novo_soquete);
+                        contador--;
+                        pthread_mutex_unlock(&lock);
+                        pthread_exit(NULL);
                     }
                 }else{
                     liberado = 0;
@@ -888,6 +1035,9 @@ void *lida_requisicao(void *args){
                     } else if (strcmp(request->metodo, "GET") == 0 || strcmp(request->metodo, "HEAD") == 0 || strcmp(request->metodo, "OPTIONS") == 0) {
                         // printf("antes de entrar no recurso\n"); //debug
                         acessar_recurso(request->metodo, caminho_completo, registro, novo_soquete);
+                    } else if (strcmp(request->metodo, "POST") == 0) {
+                        // printf("antes de entrar no recurso\n"); //debug
+                        lida_post(caminho, caminho_completo, registro, novo_soquete);
                     } else {
                         cabecalho(501, "NOT IMPLEMENTED", NULL, 0, request->metodo, registro);
                         write(novo_soquete, saida, strlen(saida));
