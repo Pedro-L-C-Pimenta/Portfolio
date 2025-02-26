@@ -1,7 +1,7 @@
 # Folder Oriented Server using C
-# Objectives:
+## Objectives:
 Using a lexical (flex) and syntactic (bison) analyzer in conjunction with the C language, create a server that is capable of receiving multiple requests, reading them with the analayzer, processing them and then sending a response that is compatible with what was requested and what was processed.
-# How to use the system:
+## How to use the system:
 You need to run the "compile.sh" program by doing:
 ./compile.sh
 Then run the server, defining which webspace, which log file, which port will be used in the connection and what is the thread limit to be used:
