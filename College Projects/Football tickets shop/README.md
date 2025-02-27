@@ -1,4 +1,5 @@
-# Football tickets selector
+# Football tickets selector 
+It has been done on 1s2023
 ## Objective 
 This was an open group project I did for Object oriented programing (MC302) in Unicamp. 
 
